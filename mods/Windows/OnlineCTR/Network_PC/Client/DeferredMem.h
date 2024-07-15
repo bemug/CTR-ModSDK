@@ -7,9 +7,7 @@
 #include <windows.h>
 #include <ws2tcpip.h>
 #else //assume posix
-#error todo...
-//todo:
-//include whatever headers we need for posix socket types.
+#include <string.h>
 #endif
 
 #include "DSPINE.h"
@@ -29,7 +27,6 @@ bool socketValid();
 SOCKET initSocket();
 void uninitSocket(SOCKET* socket);
 #else //assume posix
-#error todo...
 //todo:
 //declare functions initSocket() and uninitSocket() using the equivalent posix data type for SOCKET
 //Note: the remainder of this file likely shouldn't need to be modified for the sake of posix sockets.

@@ -1,12 +1,15 @@
+#ifdef _WIN64
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <Psapi.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <Psapi.h>
 #include <chrono>
 #include <thread>
+#include <ctype.h>
 
 #define WINDOWS_INCLUDE
 #include "../../../../../decompile/General/AltMods/OnlineCTR/global.h"
@@ -663,7 +666,7 @@ void StatePC_Launch_PickServer()
 		// EUROPE (Unknown Location)
 		case 0:
 		{
-			strcpy_s(dns_string, sizeof(dns_string), "eur1.online-ctr.net");
+			strncpy(dns_string, "eur1.online-ctr.net", sizeof(dns_string));
 			enet_address_set_host(&addr, dns_string);
 			addr.port = 64001;
 
@@ -673,7 +676,7 @@ void StatePC_Launch_PickServer()
 		// USA (New York City)
 		case 1:
 		{
-			strcpy_s(dns_string, sizeof(dns_string), "usa3.online-ctr.net");
+			strncpy(dns_string, "usa3.online-ctr.net", sizeof(dns_string));
 			enet_address_set_host(&addr, dns_string);
 			addr.port = 64001;
 
@@ -683,7 +686,7 @@ void StatePC_Launch_PickServer()
 		// Mexico (USA West)
 		case 2:
 		{
-			strcpy_s(dns_string, sizeof(dns_string), "usa2.online-ctr.net");
+			strncpy(dns_string, "usa2.online-ctr.net", sizeof(dns_string));
 			enet_address_set_host(&addr, dns_string);
 			addr.port = 64001;
 
@@ -693,7 +696,7 @@ void StatePC_Launch_PickServer()
 		// BRAZIL (Unknown Location)
 		case 3:
 		{
-			strcpy_s(dns_string, sizeof(dns_string), "brz1.online-ctr.net");
+			strncpy(dns_string, "brz1.online-ctr.net", sizeof(dns_string));
 			enet_address_set_host(&addr, dns_string);
 			addr.port = 64001;
 
@@ -703,7 +706,7 @@ void StatePC_Launch_PickServer()
 		// AUSTRALIA (Sydney)
 		case 4:
 		{
-			strcpy_s(dns_string, sizeof(dns_string), "aus1.online-ctr.net");
+			strncpy(dns_string, "aus1.online-ctr.net", sizeof(dns_string));
 			enet_address_set_host(&addr, dns_string);
 			addr.port = 2096;
 
@@ -713,7 +716,7 @@ void StatePC_Launch_PickServer()
 		// SINGAPORE (Unknown Location)
 		case 5:
 		{
-			strcpy_s(dns_string, sizeof(dns_string), "sgp1.online-ctr.net");
+			strncpy(dns_string, "sgp1.online-ctr.net", sizeof(dns_string));
 			enet_address_set_host(&addr, dns_string);
 			addr.port = 64001;
 
@@ -723,7 +726,7 @@ void StatePC_Launch_PickServer()
 		// BETA (New Jersey)
 		case 6:
 		{
-			strcpy_s(dns_string, sizeof(dns_string), "usa1.online-ctr.net");
+			strncpy(dns_string, "usa1.online-ctr.net", sizeof(dns_string));
 			enet_address_set_host(&addr, dns_string);
 			addr.port = 64001;
 
@@ -752,7 +755,7 @@ void StatePC_Launch_PickServer()
 			ip[strcspn(ip, "\n")] = '\0';
 
 			// check if the input is empty and set it to the default IP if so
-			if (strlen(ip) == 0) strcpy_s(ip, IP_ADDRESS_SIZE, DEFAULT_IP);
+			if (strlen(ip) == 0) strncpy(ip, DEFAULT_IP, IP_ADDRESS_SIZE);
 
 		private_server_port:
 			// port number
@@ -1222,11 +1225,13 @@ char* progName;
 int main(int argc, char *argv[])
 {
 	progName = argv[0];
+#ifdef _WIN64
 	HWND console = GetConsoleWindow();
 	RECT r;
 	GetWindowRect(console, &r); // stores the console's current dimensions
 	MoveWindow(console, r.left, r.top, 800, 480 + 35, TRUE);
 	SetConsoleOutputCP(CP_UTF8); // force the output to be unicode (UTF-8)
+#endif
 
 	if (argc == 2)
 	{
@@ -1237,7 +1242,7 @@ int main(int argc, char *argv[])
 		PrintBanner(DONT_SHOW_NAME);
 		// ask for the users online identification
 		printf("Input: Enter Your Online Name: ");
-		scanf_s("%s", name, (int)sizeof(name));
+		scanf("%s", name);
 		name[NAME_LEN] = 0; // truncate the name (0 based)
 	}
 

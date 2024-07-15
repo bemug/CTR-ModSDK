@@ -6,10 +6,30 @@
 #pragma comment (lib, "Ws2_32.lib")
 #pragma comment (lib, "Mswsock.lib")
 #pragma comment (lib, "AdvApi32.lib")
+
+#define ISVALIDSOCKET(s) ((s) != INVALID_SOCKET)
+#define NOSOCKET NULL
+
 #else //assume posix
-#error todo...
-//todo:
-//include whatever headers we need for posix sockets & posix sockets implementations.
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
+
+// Socket translation
+#define SOCKET int
+#define WSAGetLastError() errno
+#define closesocket(s) close(s)
+
+#define ISVALIDSOCKET(s) ((s) >= 0)
+#define NOSOCKET 0
 #endif
 
 #include "DeferredMem.h"
@@ -27,61 +47,46 @@ internalPineApiID pineSend(DSPINESend sendObj);
 void pineRecv();
 bool isPineDataPresent(pineApiID id);
 
-#if _WIN64 //windows
 SOCKET dspineSocket;
-#else //assume posix
-#error todo...
-//todo:
-//declare a variable of whatever type a posix socket is.
-#endif
 std::thread recvWorker;
 
 std::mutex pineObjsMutex;
 
-/// <summary>
-/// Initializes the deferred memory model. Returns false if failed (e.g., TCP socket not connected).
-/// If it failed, it needs to be called again until true before the deferred memory model is truly initialized.
-/// </summary>
-bool defMemInit()
+bool socketError(int ires)
 {
-#if _WIN64 //windows
-	dspineSocket = initSocket();
-#else //assume posix
-#error todo...
-	//todo:
-	//call posix version of initSocket() and assign to the posix dspineSocket variable.
+#if __WIN64
+	return ires == SOCKET_ERROR;
+#else
+	printf("%d\n", ires);
+	return ires < 0;
 #endif
-	if (dspineSocket != INVALID_SOCKET)
-	{
-		recvWorker = std::thread{ recvThread };
-		return true;
-	}
-	else
-		return false;
+
 }
-bool socketValid()
+
+void uninitSocket() //should be preceded by a call to initSocket
 {
-#if _WIN64 //windows
-	return dspineSocket != INVALID_SOCKET;
-#else //assume posix
-#error todo...
+#if __WIN64
+	uninitSocket;
+#else
+	NULL;
 #endif
 }
 
-#if _WIN64 //windows
 SOCKET initSocket() //every call to initSocket should be bookmatched by a call to uninitSocket.
 {
 	//https://learn.microsoft.com/en-us/windows/win32/winsock/creating-a-basic-winsock-application
-	WSADATA wsadata;
 	int ires;
+#if _WIN64
+	WSADATA wsadata;
 	ires = WSAStartup(MAKEWORD(2, 2), &wsadata);
 	if (ires != 0)
 	{
 		printf("WSAStartup failed with code: %d\n", ires);
 		return NULL;
 	}
+#endif
 	struct addrinfo* result = NULL, * ptr = NULL, hints;
-	ZeroMemory(&hints, sizeof(hints));
+	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
@@ -89,44 +94,49 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 	if (ires != 0)
 	{
 		printf("getaddrinfo failed with code: %d\n", ires);
-		WSACleanup();
-		return NULL;
+		uninitSocket();
+		return NOSOCKET;
 	}
-	SOCKET sock = INVALID_SOCKET;
 	ptr = result;
-	sock = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
-	if (sock == INVALID_SOCKET)
+	SOCKET sock = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+	if (!ISVALIDSOCKET(sock))
 	{
-		printf("Error at socket(): %ld\n", WSAGetLastError());
+		printf("Error at socket(): %d\n", WSAGetLastError());
 		freeaddrinfo(result);
-		WSACleanup();
-		return NULL;
+		uninitSocket();
+		return NOSOCKET;
 	}
 	ires = connect(sock, ptr->ai_addr, (int)ptr->ai_addrlen);
-	if (ires == SOCKET_ERROR)
+	if (socketError(ires))
 	{
 		closesocket(sock);
-		printf("Error trying to connect socket: %ld\n", WSAGetLastError());
-		sock = INVALID_SOCKET;
+		printf("Error trying to connect socket: %d\n", WSAGetLastError());
+		closesocket(sock);
+		uninitSocket();
+		return NOSOCKET;
 	}
 	freeaddrinfo(result);
-	if (sock == INVALID_SOCKET)
+	if (!ISVALIDSOCKET(sock))
 	{
 		printf("Unable to connect to DuckStation PINE!\n");
 		closesocket(sock);
-		WSACleanup();
-		return NULL;
+		uninitSocket();
+		return NOSOCKET;
 	}
 	else
 		printf("DuckStation PINE socket acquired.\n");
 	u_long mode = 1;
+#ifdef __WIN64
 	ires = ioctlsocket(sock, FIONBIO, &mode); //make the socket non-blocking
-	if (ires == SOCKET_ERROR)
+#else
+	fcntl(sock, F_SETFL, mode);
+#endif
+	if (socketError(ires))
 	{
 		printf("Unable to put the socket into non-blocking mode.\n");
 		closesocket(sock);
-		WSACleanup();
-		return NULL;
+		uninitSocket();
+		return NOSOCKET;
 	}
 	int enable = 1;
 	ires = setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char*)&enable, sizeof(int));
@@ -134,37 +144,27 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 	{
 		printf("Unable to enable TCP_NODELAY (disables nagle's algorithm).\n");
 		closesocket(sock);
-		WSACleanup();
-		return NULL;
+		uninitSocket();
+		return NOSOCKET;
 	}
 	return sock;
 }
 
-void uninitSocket(SOCKET* socket) //should be preceded by a call to initSocket
+/// <summary>
+/// Initializes the deferred memory model. Returns false if failed (e.g., TCP socket not connected).
+/// If it failed, it needs to be called again until true before the deferred memory model is truly initialized.
+/// </summary>
+bool defMemInit()
 {
-	if (*socket != INVALID_SOCKET)
+	dspineSocket = initSocket();
+	if (!ISVALIDSOCKET(dspineSocket))
 	{
-		WSACleanup();
+		recvWorker = std::thread{ recvThread };
+		return true;
 	}
+	else
+		return false;
 }
-#else //assume posix
-#error todo...
-//todo:
-//implement a posix version of initSocket
-//it should:
-//	1. create a socket in family AF_INET
-//  2. type of SOCK_STREAM (if that granularity exists)
-//  3. of protocol TCP
-//  4. for ip address 127.0.0.1/localhost and port 28011
-//  5. if applicable during socket construction, specify that send()/recv() are *non-blocking*
-//	6. ensure that it's connected
-//  7. if anything fails, log why, and clean up.
-//  8. return the created socket if creation succeeded.
-
-//implement a posix version of uninitSocket
-//it should:
-//	1. close connection (if open), clean up & invalidate a socket.
-#endif
 
 void recvThread()
 {
@@ -188,7 +188,6 @@ std::map<internalPineApiID, std::pair<DSPINESendRecvPair, bool>> pineObjs{};
 internalPineApiID pineSend(DSPINESend sendObj)
 { //could be on another thread, but since tcp send is non-blocking it doesn't really matter.
 	//tcp send
-	#if _WIN64 //windows
 	//critical region (syncronize access pls)
 	{
 		//need to add it first because the second we send (right after this) the recv thread might try
@@ -201,15 +200,11 @@ internalPineApiID pineSend(DSPINESend sendObj)
 	if (res != sendObj.shared_header.packetSize)
 	{
 		printf("send() failed!\n");
-		if (res == SOCKET_ERROR)
+		if (socketError(res))
 			exit_execv(6);
 		else
 			exit_execv(7); //partial send???
 	}
-	#else //assume posix
-	#error todo...
-	//posix non-blocking send
-	#endif
 	return pineSendsCount++;
 }
 
@@ -220,11 +215,18 @@ std::atomic<bool> recvRan = false;
 void pineRecv()
 { //on another thread
 	DSPINERecv recvData{};
-	#if _WIN64 //windows
+#ifdef _WIN64
 	WSAPOLLFD fdarr = { 0 };
+#else
+	struct pollfd fdarr = { 0 };
+#endif
 	fdarr.fd = dspineSocket;
 	fdarr.events = POLLRDNORM;
+#ifdef _WIN64
 	WSAPoll(&fdarr, 1, -1); //block until something is waiting in tcp buffer.
+#else
+	poll(&fdarr, 1, -1);
+#endif
 	int recvLen = recv(dspineSocket, (char*)&recvData, sizeof(DSPINERecv::SharedHeader), 0);
 	if (recvLen == sizeof(DSPINERecv::SharedHeader) &&
 		//recvData.shared_header.packetSize == /*whatever size this recv is meant to be*/ &&
@@ -257,17 +259,6 @@ void pineRecv()
 			exit_execv(5); //could be caused by many things.
 		}
 	}
-	#else //assume posix
-	#error todo...
-	//todo:
-	//this should poll/select for a recv event
-	//then recv of (maximum) length recvBufLen
-	//ensure that the length that was recvd was indeed recvBufLen
-	//ensure that recieveBuffer[0] == recvBufLen (PINE PROTOCOL)
-	//ensure that recieveBuffer[4] == 0 (PINE PROTOCOL)
-	//if any "ensures" fail, then we have reached an unrecoverable error,
-	//assume that the socket connection is bad and reset and/or close the client.
-	#endif
 	//critical region (syncronize access pls)
 	{
 		std::lock_guard<std::mutex> um{ pineObjsMutex };

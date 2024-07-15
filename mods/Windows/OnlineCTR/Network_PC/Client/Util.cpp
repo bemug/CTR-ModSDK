@@ -1,4 +1,8 @@
+#ifdef __WIN64
 #include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "Util.h"
 #include <stdio.h>
@@ -29,7 +33,9 @@ void exit_execv(int code)
 {
 	bool codeHasExitReason = code >= sizeof(exitReasons) / sizeof(exitReasons[0]);
 	const char* newArgv[] = { progName, codeHasExitReason ? exitReasons[code - 1] : "unknown exit reason", nullptr};
-	if (_execv(progName, newArgv) == -1)
+	exit(code);
+#if 0
+	if (execv(progName, newArgv) == -1)
 	{
 		if (codeHasExitReason)
 			printf("exit(%d) - unknown exit reason\n", code);
@@ -37,4 +43,5 @@ void exit_execv(int code)
 			printf("exit(%d) - %s\n", code, exitReasons[code - 1]);
 		exit(code);
 	}
+#endif
 }
