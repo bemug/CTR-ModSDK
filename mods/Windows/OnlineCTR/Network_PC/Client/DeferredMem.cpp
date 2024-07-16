@@ -169,13 +169,14 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 bool defMemInit()
 {
 	dspineSocket = initSocket();
-	if (!ISVALIDSOCKET(dspineSocket))
+	if (ISVALIDSOCKET(dspineSocket))
 	{
 		recvWorker = std::thread{ recvThread };
 		return true;
 	}
-	else
+	else {
 		return false;
+	}
 }
 
 void recvThread()
