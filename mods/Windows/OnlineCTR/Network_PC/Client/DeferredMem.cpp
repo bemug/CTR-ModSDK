@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/ioctl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -57,7 +58,6 @@ bool socketError(int ires)
 #if __WIN64
 	return ires == SOCKET_ERROR;
 #else
-	printf("%d\n", ires);
 	return ires < 0;
 #endif
 
@@ -84,12 +84,11 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 		printf("WSAStartup failed with code: %d\n", ires);
 		return NULL;
 	}
-#endif
 	struct addrinfo* result = NULL, * ptr = NULL, hints;
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
+	hints.ai_family = AF_INET;
 	ires = getaddrinfo("127.0.0.1", "28011", &hints, &result); //DS PINE
 	if (ires != 0)
 	{
@@ -107,6 +106,15 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 		return NOSOCKET;
 	}
 	ires = connect(sock, ptr->ai_addr, (int)ptr->ai_addrlen);
+#else
+	SOCKET sock = socket(AF_UNIX, SOCK_STREAM, 0);
+	sockaddr_un address;
+	address.sun_family = AF_UNIX;
+	strcpy(address.sun_path, "/run/user/1000/duckstation.sock");
+	int len = sizeof(address);
+
+	ires = connect(sock, (sockaddr*)&address, len);
+#endif
 	if (socketError(ires))
 	{
 		closesocket(sock);
@@ -115,7 +123,9 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 		uninitSocket();
 		return NOSOCKET;
 	}
+#if _WIN64
 	freeaddrinfo(result);
+#endif
 	if (!ISVALIDSOCKET(sock))
 	{
 		printf("Unable to connect to DuckStation PINE!\n");
@@ -139,6 +149,7 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 		return NOSOCKET;
 	}
 	int enable = 1;
+#ifdef __WIN64
 	ires = setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char*)&enable, sizeof(int));
 	if (ires != 0)
 	{
@@ -147,6 +158,7 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 		uninitSocket();
 		return NOSOCKET;
 	}
+#endif
 	return sock;
 }
 
