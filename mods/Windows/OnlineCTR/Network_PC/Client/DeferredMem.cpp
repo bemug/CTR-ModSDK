@@ -139,7 +139,7 @@ SOCKET initSocket() //every call to initSocket should be bookmatched by a call t
 #ifdef __WIN64
 	ires = ioctlsocket(sock, FIONBIO, &mode); //make the socket non-blocking
 #else
-	fcntl(sock, F_SETFL, mode);
+	ires = fcntl(sock, F_SETFL, O_NONBLOCK);
 #endif
 	if (socketError(ires))
 	{
